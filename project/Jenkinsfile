@@ -2,65 +2,100 @@ pipeline {
     agent any
 
     environment {
-        REPO_URL = 'git@github.com:your-username/your-repo.git'  // Change this to your GitHub repo
-        BRANCH = 'main'
-        IMAGE_NAME = 'your-docker-image'
-        IMAGE_TAG = 'latest'
-        DOCKER_REGISTRY = 'docker.io/your-dockerhub-username'  // Change this if using another registry
-        WSL_HOST = 'wsl-hostname'  // Change this to your WSL instance hostname
-        WSL_USER = 'your-wsl-user'
+        DOCKER_IMAGE_NAME = "${DOCKERHUB_USERNAME}/vivek-institute-backend"
+        DOCKERHUB_USERNAME = credentials('dockerhub-username')  // Jenkins Credentials
+        DOCKERHUB_PASSWORD = credentials('dockerhub-password')  // Jenkins Credentials
     }
 
     stages {
         stage('Checkout Code') {
             steps {
-                git branch: "${BRANCH}", credentialsId: 'github-credentials-id', url: "${REPO_URL}"
+                checkout scm
             }
         }
 
-        stage('Build Docker Image with Earthly') {
+        stage('Set up QEMU') {
             steps {
-                sh '''
-                earthly +docker
-                docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
-                docker login -u "$DOCKER_USER" -p "$DOCKER_PASS"
-                docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
-                '''
+                script {
+                    sh 'docker/setup-qemu-action@v2'  // Set up QEMU for Docker
+                }
             }
         }
 
-        stage('Push Code to GitHub') {
+        stage('Set up Docker Buildx') {
             steps {
-                sh '''
-                git config --global user.email "your-email@example.com"
-                git config --global user.name "your-github-username"
-                git add .
-                git commit -m "Automated commit from Jenkins"
-                git push origin ${BRANCH}
-                '''
+                script {
+                    sh 'docker/setup-buildx-action@v2'  // Set up Docker Buildx
+                }
             }
         }
 
-        stage('Deploy on WSL') {
+        stage('Install Earthly') {
             steps {
-                sh '''
-                ssh ${WSL_USER}@${WSL_HOST} <<EOF
-                    docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
-                    docker stop ${IMAGE_NAME} || true
-                    docker rm ${IMAGE_NAME} || true
-                    docker run -d --name ${IMAGE_NAME} -p 3000:3000 ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
-                EOF
-                '''
+                script {
+                    sh '''
+                        sudo /bin/sh -c 'wget https://github.com/earthly/earthly/releases/latest/download/earthly-linux-amd64 -O /usr/local/bin/earthly && chmod +x /usr/local/bin/earthly'
+                        earthly --version
+                    '''
+                }
+            }
+        }
+
+        stage('Generate build metadata') {
+            steps {
+                script {
+                    env.DATE = sh(script: "date +'%Y-%m-%d'", returnStdout: true).trim()
+                    env.SHA_SHORT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+                }
+            }
+        }
+
+        stage('Build Application with Earthly') {
+            steps {
+                script {
+                    sh 'earthly +build'
+                }
+            }
+        }
+
+        stage('Login to DockerHub') {
+            when {
+                expression { return env.GITHUB_EVENT_NAME != 'pull_request' }
+            }
+            steps {
+                script {
+                    sh """
+                        echo ${DOCKERHUB_PASSWORD} | docker login -u ${DOCKERHUB_USERNAME} --password-stdin
+                    """
+                }
+            }
+        }
+
+        stage('Build and Push Docker Image') {
+            when {
+                expression { return env.GITHUB_EVENT_NAME != 'pull_request' }
+            }
+            steps {
+                script {
+                    sh """
+                        earthly --push +docker --tag=latest --tag=${SHA_SHORT} --tag=${DATE}
+                    """
+                }
             }
         }
     }
 
     post {
         success {
-            echo 'Deployment successful!'
+            script {
+                echo "Pipeline succeeded"
+            }
         }
         failure {
-            echo 'Deployment failed!'
+            script {
+                echo "Pipeline failed"
+            }
         }
     }
 }
+
