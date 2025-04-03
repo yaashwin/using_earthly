@@ -4,20 +4,15 @@ pipeline {
     environment {
         DOCKERHUB_USERNAME = 'yaashwin06'  // Your DockerHub username
         DOCKERHUB_REPO = 'earthly_image'  // Your DockerHub image repository name
-        DOCKERHUB_PASSWORD = credentials('dockerhub-password')  // Reference the credential ID
-        DOCKER_IMAGE_NAME = "${DOCKERHUB_USERNAME}/${DOCKERHUB_REPO}"
+        DOCKERHUB_PASSWORD = credentials('dockerhub-password')  // DockerHub password stored as Jenkins secret
+        DOCKER_IMAGE_NAME = "${DOCKERHUB_USERNAME}/${DOCKERHUB_REPO}:latest"  // DockerHub image name
     }
 
     stages {
-        stage('Checkout SCM') {
-            steps {
-                checkout scm
-            }
-        }
-
         stage('Login to DockerHub') {
             steps {
                 script {
+                    echo "Logging into DockerHub..."
                     sh """
                         echo ${DOCKERHUB_PASSWORD} | docker login -u ${DOCKERHUB_USERNAME} --password-stdin
                     """
@@ -25,11 +20,23 @@ pipeline {
             }
         }
 
-        stage('Build and Push Docker Image') {
+        stage('Pull Docker Image from DockerHub') {
             steps {
                 script {
-                    sh 'docker build -t ${DOCKER_IMAGE_NAME}:latest .'
-                    sh 'docker push ${DOCKER_IMAGE_NAME}:latest'
+                    echo "Pulling Docker image from DockerHub..."
+                    sh "docker pull ${DOCKER_IMAGE_NAME}"
+                }
+            }
+        }
+
+        stage('Deploy Docker Container on WSL') {
+            steps {
+                script {
+                    echo "Running Docker container in WSL..."
+                    // Ensure Docker is installed and running on WSL before executing the command
+                    sh """
+                        docker run -d --name earthly_container ${DOCKER_IMAGE_NAME}
+                    """
                 }
             }
         }
@@ -37,10 +44,10 @@ pipeline {
 
     post {
         success {
-            echo "Pipeline succeeded"
+            echo "Docker container successfully deployed."
         }
         failure {
-            echo "Pipeline failed"
+            echo "Pipeline failed."
         }
     }
 }
