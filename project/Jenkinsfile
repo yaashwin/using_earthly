@@ -1,0 +1,66 @@
+pipeline {
+    agent any
+
+    environment {
+        REPO_URL = 'git@github.com:your-username/your-repo.git'  // Change this to your GitHub repo
+        BRANCH = 'main'
+        IMAGE_NAME = 'your-docker-image'
+        IMAGE_TAG = 'latest'
+        DOCKER_REGISTRY = 'docker.io/your-dockerhub-username'  // Change this if using another registry
+        WSL_HOST = 'wsl-hostname'  // Change this to your WSL instance hostname
+        WSL_USER = 'your-wsl-user'
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git branch: "${BRANCH}", credentialsId: 'github-credentials-id', url: "${REPO_URL}"
+            }
+        }
+
+        stage('Build Docker Image with Earthly') {
+            steps {
+                sh '''
+                earthly +docker
+                docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                docker login -u "$DOCKER_USER" -p "$DOCKER_PASS"
+                docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                '''
+            }
+        }
+
+        stage('Push Code to GitHub') {
+            steps {
+                sh '''
+                git config --global user.email "your-email@example.com"
+                git config --global user.name "your-github-username"
+                git add .
+                git commit -m "Automated commit from Jenkins"
+                git push origin ${BRANCH}
+                '''
+            }
+        }
+
+        stage('Deploy on WSL') {
+            steps {
+                sh '''
+                ssh ${WSL_USER}@${WSL_HOST} <<EOF
+                    docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                    docker stop ${IMAGE_NAME} || true
+                    docker rm ${IMAGE_NAME} || true
+                    docker run -d --name ${IMAGE_NAME} -p 3000:3000 ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                EOF
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Deployment successful!'
+        }
+        failure {
+            echo 'Deployment failed!'
+        }
+    }
+}
