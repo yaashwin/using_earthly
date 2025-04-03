@@ -80,6 +80,6 @@ docker:
     COPY +build/app /app
     # Expose port and define entrypoint
     EXPOSE 3000
-    CMD ["node", "server.js"]
+    CMD ["npm", "run", "dev"]
     # Save the image
     SAVE IMAGE --push yaashwin06/earthly_image:latest
