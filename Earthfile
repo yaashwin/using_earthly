@@ -82,4 +82,4 @@ docker:
     EXPOSE 3000
     CMD ["node", "server.js"]
     # Save the image
-    SAVE IMAGE --push guhanandan/vivek-institute-backend:latest
+    SAVE IMAGE --push yaashwin06/earthly_image:latest
