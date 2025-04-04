@@ -6,6 +6,8 @@ pipeline {
         DOCKERHUB_REPO = 'earthly_image'  // Your DockerHub image repository name
         DOCKERHUB_PASSWORD = credentials('dockerhub-password')  // DockerHub password stored as Jenkins secret
         DOCKER_IMAGE_NAME = "${DOCKERHUB_USERNAME}/${DOCKERHUB_REPO}:latest"  // DockerHub image name
+        HOST_PORT = '9999'  // External port to be mapped on the host machine
+        CONTAINER_PORT = '3000'  // Internal port inside the container
     }
 
     stages {
@@ -35,7 +37,7 @@ pipeline {
                     echo "Running Docker container in WSL..."
                     // Ensure Docker is installed and running on WSL before executing the command
                     sh """
-                        docker run -d --name earthly_container ${DOCKER_IMAGE_NAME}
+                        docker run -d --name earthly_container -p ${HOST_PORT}:${CONTAINER_PORT} ${DOCKER_IMAGE_NAME}
                     """
                 }
             }
@@ -44,7 +46,7 @@ pipeline {
 
     post {
         success {
-            echo "Docker container successfully deployed."
+            echo "Docker container successfully deployed on port ${HOST_PORT}."
         }
         failure {
             echo "Pipeline failed."
